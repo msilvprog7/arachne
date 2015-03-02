@@ -99,7 +99,11 @@ def main():
 
 	# Apply technique
 
-	output_img = img.linear(img_set, (3, 3))
+	output_img = img.linearConstructOnce(img_set, (3, 3))
+
+
+
+	# Save image
 
 	if output_img is not None:
 		misc.imsave(img_set.dest, output_img)

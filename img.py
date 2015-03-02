@@ -56,6 +56,10 @@ class Patch:
 		self.pixels = pixels
 
 
+	def getPatchSize(self):
+		""" Return (px_width, px_height) of patch """
+		return (self.pixels.shape[1], self.pixels.shape[0])
+
 
 	@staticmethod
 	def numPatches(img_arr, patch_size):
@@ -162,7 +166,9 @@ def upperBound(value, upperValue):
 # * Techniques/Operations
 
 def linear(img_set, patch_size):
-	""" Linear comparison of samples to source with specified patch size (px_width, px_height) """
+	""" Linear comparison of samples to source with specified patch size (px_width, px_height)
+		This is a VERY slow operation.
+	"""
 
 	# Valid input
 
@@ -239,8 +245,10 @@ def linear(img_set, patch_size):
 
 					sample_patch = Patch(pixels=sample_image_read[y:(y + patch_size[1]), x:(x + patch_size[0])])
 
+					# all permutations makes this INCREDIBLY slow
 					# get rotated and flipped patches as well
-					sample_patches = Patch.permute(sample_patch)
+					# sample_patches = Patch.permute(sample_patch)
+					sample_patches = [sample_patch]
 
 					for curr_patch in sample_patches:
 						currentValue = Patch.comparePatches(source_patch, curr_patch)
@@ -248,6 +256,127 @@ def linear(img_set, patch_size):
 						if currentValue > bestValue:
 							bestValue = currentValue
 							bestPatch = curr_patch
+
+
+		# use best patch to overwrite
+		if bestPatch is not None:
+
+			for y in range(startPxRow, endPxRow):
+				for x in range(startPxCol, endPxCol):
+					img_write[y, x] = bestPatch.pixels[y - startPxRow, x - startPxCol]
+
+
+
+
+	return img_write
+
+
+
+def linearConstructOnce(img_set, patch_size):
+	""" Linear comparison of samples to source with specified patch size (px_width, px_height)
+		but constructing patches of samples only once if necessary.
+	"""
+
+	# Valid input
+
+	if not isinstance(img_set, ImgSet):
+		print "img_set in img.linearConstructOnce() must be of type img.ImgSet"
+		return None
+
+	if not isinstance(patch_size, tuple) or len(patch_size) != 2 or not isinstance(patch_size[0], int) or not isinstance(patch_size[1], int):
+		print "patch_size in img.linearConstructOnce() must be a tuple of 2 ints"
+		return None
+
+
+	# Get ndarrays
+
+	img_read = misc.imread(img_set.src)
+
+	if patch_size[0] > img_read.shape[1] or patch_size[1] > img_read.shape[0]:
+		print "Patch size larger than image"
+		return None
+
+
+	# Set up blank canvas
+
+	img_write = numpy.zeros(img_read.shape, dtype=img_read.dtype)
+
+
+	# Get patch info
+
+	numPatches = Patch.numPatches(img_read, patch_size)
+	patchRows = Patch.patchRows(img_read, patch_size)
+	patchCols = Patch.patchCols(img_read, patch_size)
+
+	print numPatches, patchRows, patchCols
+
+	# Set up dictionary for samples patches
+	sample_patches = {};
+
+	for patchNum in range(numPatches):
+
+		print "Patch %d" % (patchNum, )
+
+		patchRow = patchNum // patchCols
+		patchCol = patchNum % patchCols
+
+
+		# bounds of patch
+
+		startPxRow = int(patchRow * patch_size[1])
+		endPxRow = upperBound(startPxRow + patch_size[1], img_read.shape[0])
+
+		startPxCol = int(patchCol * patch_size[0])
+		endPxCol = upperBound(startPxCol + patch_size[0], img_read.shape[1])
+
+
+		# get pixels in current patch
+
+		source_patch = Patch(pixels=img_read[startPxRow:endPxRow, startPxCol:endPxCol].copy())
+		
+
+		# iterate over sample patches to find best patch to represent in
+
+		bestPatch = None
+		bestValue = 0.0
+
+		for sample_image in img_set.samples:
+
+			curr_key = (sample_image, source_patch.getPatchSize())
+
+			if curr_key not in sample_patches:
+				# Construct patches
+
+				print "Construct sample patches", curr_key
+
+				sample_image_read = misc.imread(sample_image)
+				sample_patches[curr_key] = []
+
+				# doesn't match how pixels are encoded, move on
+				if (sample_image_read.shape[2] != img_read.shape[2] or sample_image_read.dtype != img_read.dtype):
+					continue
+
+				# iterate over pixels, act as upper left corner of patch
+				for y in range(sample_image_read.shape[0] - (patch_size[1] - 1)):
+
+					for x in range(sample_image_read.shape[1] - (patch_size[0] - 1)):
+
+						sample_patch = Patch(pixels=sample_image_read[y:(y + patch_size[1]), x:(x + patch_size[0])])
+						sample_patches[curr_key].append(sample_patch)
+
+						# get rotated and flipped patches as well
+						# sample_patches = Patch.permute(sample_patch)
+						# sample_patches[curr_key].append(sample_patches)
+			
+			# Compare patches
+
+			for curr_patch in sample_patches[curr_key]:
+					currentValue = Patch.comparePatches(source_patch, curr_patch)
+
+					if currentValue > bestValue:
+						bestValue = currentValue
+						bestPatch = curr_patch
+
 
 
 		# use best patch to overwrite
