@@ -1,0 +1,4 @@
+samples/
+test_dest/
+test_src/
+*.pyc
