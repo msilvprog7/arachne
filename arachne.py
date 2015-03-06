@@ -13,7 +13,7 @@ import argparse
 import os
 import sys
 import img
-from img import ImgSet
+from patch import ImgSet
 from scipy import misc
 
 
@@ -99,7 +99,7 @@ def main():
 
 	# Apply technique
 
-	output_img = img.linearConstructOnce(img_set, (3, 3))
+	output_img = img.linear(img_set, (3, 3))
 
 
 
