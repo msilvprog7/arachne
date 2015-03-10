@@ -324,17 +324,22 @@ class SamplePatches:
 				for x in range(sampleImgRead.shape[1] - (self.iter_patch_size[0] - 1)):
 
 					samplePatch = Patch(pixels=sampleImgRead[y:(y + self.iter_patch_size[1]), x:(x + self.iter_patch_size[0])])
-					self.samplePatches[currKey].append(samplePatch)
+					self.addPatch(currKey, samplePatch)
 
 					# get rotated and flipped patches as well
 					# permutedPatches = Patch.permute(samplePatch)
-					# self.samplePatches[currKey].append(permutedPatches)
+					# self.addPatch(currKey, permutedPatches)
 
 			# Add to number generated
 			gen_sum += len(self.samplePatches[currKey])
 
 		return gen_sum
 
+
+	def addPatch(self, key, patch):
+		""" Add sample to list of samples """
+
+		self.samplePatches[key].append(patch)
 
 
 	def setPatchSize(self, source_patch):
