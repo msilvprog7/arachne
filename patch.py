@@ -301,8 +301,7 @@ class SamplePatches:
 		if currKey in self.samplePatches:
 			return len(self.samplePatches[currKey])
 
-
-		gen_sum = 0
+		
 		self.samplePatches[currKey] = []
 
 		print "Creating samples ", currKey
@@ -330,10 +329,8 @@ class SamplePatches:
 					# permutedPatches = Patch.permute(samplePatch)
 					# self.addPatch(currKey, permutedPatches)
 
-			# Add to number generated
-			gen_sum += len(self.samplePatches[currKey])
 
-		return gen_sum
+		return len(self.samplePatches[currKey])
 
 
 	def addPatch(self, key, patch):
