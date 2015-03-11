@@ -197,7 +197,7 @@ class BestPatch:
 		"""
 
 		bestPatch = None
-		bestValue = 0.0
+		bestValue = -1.0
 
 		samplePatches.setPatchSize(patch)
 
@@ -211,6 +211,31 @@ class BestPatch:
 				bestPatch = curr_patch
 
 		return bestPatch
+
+
+	@staticmethod
+	def getBestPatchViaSublist(patch, sublistSamplePatches):
+		""" Get closest Patch to patch in sublistSamplePatches
+			(setPatch() will set the sublist to iterate over
+			within sublistSamplePatches)
+		"""
+
+		bestPatch = None
+		bestValue = -1.0
+
+		sublistSamplePatches.setPatch(patch)
+
+		# iterate over sample images to find best patch to represent in
+		for curr_patch in sublistSamplePatches:
+
+			currentValue = Patch.comparePatches(patch, curr_patch)
+
+			if currentValue > bestValue:
+				bestValue = currentValue
+				bestPatch = curr_patch
+
+		return bestPatch
+
 
 
 
@@ -299,10 +324,10 @@ class SamplePatches:
 		currKey = self.iter_patch_size
 
 		if currKey in self.samplePatches:
-			return len(self.samplePatches[currKey])
+			return self.numPatches(currKey)
 
-		
-		self.samplePatches[currKey] = []
+
+		self.initPatches(currKey)
 
 		print "Creating samples ", currKey
 
@@ -330,13 +355,28 @@ class SamplePatches:
 					# self.addPatch(currKey, permutedPatches)
 
 
-		return len(self.samplePatches[currKey])
+		return self.numPatches(currKey)
+
+
+	def initPatches(self, key):
+		""" Initialize value for dictionary to be associated with current key """
+
+		self.samplePatches[key] = []
 
 
 	def addPatch(self, key, patch):
-		""" Add sample to list of samples """
+		""" Add sample to list of samples for key """
 
-		self.samplePatches[key].append(patch)
+		if isinstance(patch, list):
+			self.samplePatches[key].extend(patch)
+		else:
+			self.samplePatches[key].append(patch)
+
+
+	def numPatches(self, key):
+		""" Return number of patches associated with key """
+
+		return len(self.samplePatches[key])
 
 
 	def setPatchSize(self, source_patch):
@@ -365,3 +405,250 @@ class SamplePatches:
 		return self.samplePatches[self.iter_patch_size][self.iter_counter]
 
 
+
+# $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $
+# $ Sublist Sample Patches  $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $ $
+
+class PatchSublist:
+	""" A sublist of patches that can be categorized by a patch constructed of their average
+	"""
+
+	def __init__(self, initialPatch):
+		""" Constructor """
+
+		self.patches = [initialPatch]
+		self.patch_size = initialPatch.getPatchSize()
+
+		self.patch_sum = numpy.zeros(initialPatch.pixels.shape, dtype="uint64")
+		self.addToSum(initialPatch)
+
+		self.avg = Patch(pixels=initialPatch.pixels.copy())
+		self.valid_avg = True
+
+
+	def addToSum(self, patch):
+		""" Add patch to patch_sum """
+
+		if self.patch_sum.shape != patch.pixels.shape:
+			print "Invalid patch shape to add to PatchSublist"
+			return
+
+		for y in range(0, self.patch_sum.shape[0]):
+			for x in range(0, self.patch_sum.shape[1]):
+				for z in range(0, self.patch_sum.shape[2]):
+					self.patch_sum[y, x, z] += patch.pixels[y, x, z]
+
+		# Invalidate average
+		self.valid_avg = False
+
+
+	def constructAvg(self):
+		""" Construct the average for the sublist using the patch_sum """
+
+		for y in range(0, self.avg.pixels.shape[0]):
+			for x in range(0, self.avg.pixels.shape[1]):
+				for z in range(0, self.avg.pixels.shape[2]):
+					self.avg.pixels[y, x, z] = (self.patch_sum[y, x, z] / self.__len__())
+
+		self.valid_avg = True
+
+
+	def getAvg(self):
+		""" Get average patch of those represented by the sublist """
+
+		# Construct average if needed
+		if not self.valid_avg:
+			self.constructAvg()
+
+		return self.avg
+
+	def add(self, patch):
+		""" Add patch to sublist """
+
+		if self.patch_size != patch.getPatchSize():
+			print "Patch size does not match, can't add to PatchSublist"
+			return False
+
+		self.patches.append(patch)
+		self.addToSum(patch)
+
+		return True
+
+
+	def __len__(self):
+		""" Length of sublist """
+		return len(self.patches)
+
+
+
+class PatchSublistManager:
+	""" Manager of patch sublists to allow matching of samples for better organization
+		based on sample patch comparisons. If best comparison between patch and the average
+		of each sublist is greater than or equal to the threshold, then add it to that
+		sublist, else, create a new sublist.
+	"""
+
+	def __init__(self, thresholdValue):
+		""" Constructor"""
+
+		if thresholdValue < 0 or thresholdValue > 1:
+			print "thresholdValue in PatchSublistManager should be in range [0, 1]"
+
+		self.sublists = []
+		self.threshold = thresholdValue
+		self.numPatches = 0
+
+
+	def numSublists(self):
+		""" Return the number of sublists """
+
+		return len(self.sublists)
+
+
+	def addPatch(self, patch):
+		""" Add patch to sublist with best comparison value greater than or equal
+			to the threshold or create new sublist
+		"""
+
+		bestSublist = self.getBestSublist(patch, thresholdCheck=True)
+
+		# either add new sublist or add to sublist
+		if bestSublist is None:
+			self.sublists.append(PatchSublist(patch))
+		else:
+			bestSublist.add(patch)
+
+		self.numPatches += 1
+
+
+	def getBestSublist(self, patch, thresholdCheck=False):
+		""" Get the best sublist match for this patch if greater than or equal to
+			threshold
+		"""
+
+		bestSublist = None
+		bestValue = -1.0
+
+		# iterate over sublists to find best sublist for the patch
+		for currSublist in self.sublists:
+
+			currentValue = Patch.comparePatches(patch, currSublist.getAvg())
+
+			if currentValue > bestValue:
+				bestValue = currentValue
+				bestSublist = currSublist
+
+
+		# check threshold
+		if thresholdCheck and bestValue < self.threshold:
+			return None
+
+		return bestSublist
+
+
+	def getAllPatches(self):
+		""" Get a list of all patches contained by manager """
+
+		patches = []
+
+		for sublist in self.sublists:
+			patches.extend(sublist.patches)
+
+		return patches
+
+
+	def __len__(self):
+		""" Return number of patches stored in the manager """
+
+		return self.numPatches
+
+
+
+class SublistSamplePatches(SamplePatches):
+	""" Extension of Sample Patches where patches are organized into sublists 
+		organized by how well those patches match the average of each sublist.
+		If the best match is greater than or equal to a threshold, appends to
+		sublist, else, a new sublist is created.
+	"""
+
+	def __init__(self, img_set, img_read, thresholdValue):
+		""" Constructor """
+
+		SamplePatches.__init__(self, img_set, img_read)
+		self.threshold = thresholdValue
+
+
+	def generate(self, source_patch):
+
+		displayGenerateMsg = (not source_patch.getPatchSize() in self.samplePatches)
+
+		num = SamplePatches.generate(self, source_patch)
+
+		if displayGenerateMsg:
+			print "%d sublists generated in SublistPatchManager for a threshold of %.3f" % (self.samplePatches[self.iter_patch_size].numSublists(), self.threshold)
+
+		return num
+
+
+	def initPatches(self, key):
+		""" Initialize value for dictionary to be associated with current key """
+
+		self.samplePatches[key] = PatchSublistManager(self.threshold)
+
+
+	def addPatch(self, key, patch):
+		""" Add sample to list of samples """
+
+		if isinstance(patch, list):
+			for curr_patch in patch:
+				self.samplePatches[key].addPatch(curr_patch)
+		else:
+			self.samplePatches[key].addPatch(patch)
+
+
+	def numPatches(self, key):
+		""" Return number of patches associated with key """
+
+		return len(self.samplePatches[key])
+
+
+	def setPatch(self, source_patch):
+		""" Pass in a patch to get best patch sublist from sample patch generation 
+			(perform if needed) and then this is usable for iteration on that sublist
+		"""
+
+		self.iter_counter = -1
+
+		# generate and then grab sublist that matches
+		self.generate(source_patch)
+		self.iter_list = self.samplePatches[self.iter_patch_size].getBestSublist(source_patch)
+		self.iter_max = len(self.iter_list)
+
+
+	def setPatchSize(self, source_patch):
+		""" Pass in a patch to specify patch size for sample patch generation and 
+			then this is usable for iteration (iterates over all, same as linear)
+		"""
+
+		self.iter_counter = -1
+
+		# generate and then grab sublist that matches
+		self.iter_max = self.generate(source_patch)
+		self.iter_list = self.samplePatches[self.iter_patch_size].getAllPatches()
+
+
+	def __iter__(self):
+		""" Iterator - iterate over sample patches with patch size set using setPatchSize """
+		return self
+
+
+	def next(self):
+		""" Grab next patch with patch size specified """
+
+		self.iter_counter += 1
+
+		if self.iter_counter >= self.iter_max:
+			self.iter_counter = -1
+			raise StopIteration
+
+		return self.iter_list.patches[self.iter_counter]

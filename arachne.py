@@ -99,7 +99,11 @@ def main():
 
 	# Apply technique
 
-	output_img = img.linear(img_set, (3, 3))
+	# Linear technique
+	# output_img = img.linear(img_set, (3, 3))
+
+	# Sublists technique
+	output_img = img.sublists(img_set, (3, 3), 0.85)
 
 
 
